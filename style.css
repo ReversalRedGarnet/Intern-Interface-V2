@@ -852,10 +852,19 @@ body.menu-page {
 
 /* footer */
 .site-footer {
+  background: var(--usp-blue-xdark);
+  border-top: 3px solid var(--usp-orange);
+  padding: 9px 24px;
   text-align: center;
-  padding: 24px 16px;
-  color: var(--text-muted, #6b7280);
-  font-family: var(--font-mono, 'IBM Plex Mono', monospace);
-  font-size: 0.85rem;
-  opacity: 0.7;
+}
+
+.site-footer p {
+  max-width: 1280px;
+  margin: 0 auto;
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(255,255,255,.50);
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
 }
