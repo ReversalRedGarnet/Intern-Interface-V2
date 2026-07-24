@@ -735,6 +735,7 @@ body.menu-page {
 .campus-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+  align-items: start;
   gap: 20px;
   margin-bottom: 36px;
 }
