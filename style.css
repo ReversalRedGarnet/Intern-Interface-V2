@@ -849,3 +849,13 @@ body.menu-page {
   padding-top: 20px;
   border-top: 1px solid var(--border-light);
 }
+
+/* footer */
+.site-footer {
+  text-align: center;
+  padding: 24px 16px;
+  color: var(--text-muted, #6b7280);
+  font-family: var(--font-mono, 'IBM Plex Mono', monospace);
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
