@@ -868,3 +868,18 @@ body.menu-page {
   letter-spacing: 0.10em;
   text-transform: uppercase;
 }
+
+/* makes pages a vertical flex container */
+html, body {
+  height: 100%;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.menu-app {
+  flex: 1;
+}
