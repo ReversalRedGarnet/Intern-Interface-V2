@@ -55,6 +55,10 @@
 /* ── Reset ─────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+html, body {
+  height: 100%;
+}
+
 body {
   font-family: var(--font-body);
   background: var(--bg);
@@ -120,6 +124,26 @@ body {
 
 /* right-side label */
 .site-tool {
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(255,255,255,.50);
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+}
+
+/* ── SITE FOOTER (every page) — mirrors .site-header styling ── */
+.site-footer {
+  background: var(--usp-blue-xdark);
+  border-top: 3px solid var(--usp-orange);
+  padding: 9px 24px;
+  text-align: center;
+  margin-top: auto;
+}
+
+.site-footer p {
+  max-width: 1280px;
+  margin: 0 auto;
   font-family: var(--font-body);
   font-size: 10px;
   font-weight: 500;
@@ -702,14 +726,22 @@ h1 {
 }
 
 /* ── MENU PAGE ── */
+/* flex column so .site-footer sticks to the bottom of the viewport even
+   when there isn't enough content (e.g. campus cards collapsed) to push
+   it down naturally */
 body.menu-page {
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
 }
 
 .menu-app {
   max-width: 780px;
   margin: 0 auto;
   padding: 40px 24px 60px;
+  flex: 1;
+  width: 100%;
 }
 
 /* page heading inside menu */
@@ -731,7 +763,9 @@ body.menu-page {
   color: var(--text-muted);
 }
 
-/* campus card grid */
+/* campus card grid — align-items:start stops the grid stretching every
+   card in a row to match the tallest one, so an unopened card no longer
+   visually "grows" when its sibling's room-list expands */
 .campus-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
@@ -757,36 +791,16 @@ body.menu-page {
 .campus-card-header {
   display: flex;
   align-items: center;
-  gap: 14px;
   margin-bottom: 18px;
   padding-bottom: 14px;
   border-bottom: 1px solid var(--border-light);
 }
 
-.campus-icon {
-  font-size: 22px;
-  width: 44px;
-  height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--usp-blue-tint);
-  border-radius: 8px;
-  flex-shrink: 0;
-}
-
 .campus-name {
   font-family: var(--font-display);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--usp-blue-xdark);
-  margin-bottom: 2px;
-}
-
-.campus-sub {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--text-muted);
 }
 
 .room-list {
@@ -848,38 +862,4 @@ body.menu-page {
   text-align: center;
   padding-top: 20px;
   border-top: 1px solid var(--border-light);
-}
-
-/* footer */
-.site-footer {
-  background: var(--usp-blue-xdark);
-  border-top: 3px solid var(--usp-orange);
-  padding: 9px 24px;
-  text-align: center;
-}
-
-.site-footer p {
-  max-width: 1280px;
-  margin: 0 auto;
-  font-family: var(--font-body);
-  font-size: 10px;
-  font-weight: 500;
-  color: rgba(255,255,255,.50);
-  letter-spacing: 0.10em;
-  text-transform: uppercase;
-}
-
-/* makes pages a vertical flex container */
-html, body {
-  height: 100%;
-}
-
-body {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-}
-
-.menu-app {
-  flex: 1;
 }
