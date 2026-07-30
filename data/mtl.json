@@ -275,9 +275,10 @@
     },
     {
       "id": "STAFF-PC",
-      "type": "pc",
+      "type": "staff",
       "top": 135,
-      "left": 335
+      "left": 335,
+      "label": "Staff"
     }
   ]
 }

@@ -1,6 +1,6 @@
 /**
  * main.js — entry point.
- *   • On menu.html    → window.ROOM_META is undefined → initMenuPage()
+ *   • On index.html   → window.ROOM_META is undefined → initMenuPage()
  *   • On a room page  → window.ROOM_META is set        → fetch its data
  *                        file and initRoomPage(fullConfig)
  */

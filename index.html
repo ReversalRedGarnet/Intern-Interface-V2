@@ -27,7 +27,7 @@
 
     <header class="menu-header">
       <h1>IT Room Monitor</h1>
-      <p class="subtitle">Select a campus, then choose a room to view its device status</p>
+      <p class="subtitle">Pick a room to check its devices. Statuses save as you go.</p>
     </header>
 
     <div class="campus-grid">
@@ -37,18 +37,18 @@
         <div class="campus-card-header">
           <h2 class="campus-name">King George Campus</h2>
         </div>
-        <div class="room-list" id="rooms-kg" style="display:none">
+        <div class="room-list" id="rooms-kg">
           <a class="room-link" href="rooms/library.html">
-            <span class="room-link-icon">💻</span>Library
+            <span class="room-link-icon" aria-hidden="true">💻</span>Library
           </a>
           <a class="room-link" href="rooms/s28-107.html">
-            <span class="room-link-icon">💻</span>S28-107
+            <span class="room-link-icon" aria-hidden="true">💻</span>S28-107
           </a>
           <a class="room-link" href="rooms/s28-104.html">
-            <span class="room-link-icon">💻</span>S28-104
+            <span class="room-link-icon" aria-hidden="true">💻</span>S28-104
           </a>
         </div>
-        <button class="campus-toggle" data-target="rooms-kg">View Rooms ▾</button>
+        <button class="campus-toggle" data-target="rooms-kg" aria-controls="rooms-kg" aria-expanded="true">Hide Rooms ▴</button>
       </div>
 
       <!-- Lawson Tama Campus -->
@@ -56,15 +56,15 @@
         <div class="campus-card-header">
           <h2 class="campus-name">Lawson Tama Campus</h2>
         </div>
-        <div class="room-list" id="rooms-lt" style="display:none">
+        <div class="room-list" id="rooms-lt">
           <a class="room-link" href="rooms/gpl.html">
-            <span class="room-link-icon">💻</span>GPL
+            <span class="room-link-icon" aria-hidden="true">💻</span>GPL
           </a>
           <a class="room-link" href="rooms/mtl.html">
-            <span class="room-link-icon">💻</span>MTL
+            <span class="room-link-icon" aria-hidden="true">💻</span>MTL
           </a>
         </div>
-        <button class="campus-toggle" data-target="rooms-lt">View Rooms ▾</button>
+        <button class="campus-toggle" data-target="rooms-lt" aria-controls="rooms-lt" aria-expanded="true">Hide Rooms ▴</button>
       </div>
 
     </div>
@@ -75,7 +75,7 @@
       <button class="toolbar-btn" id="btn-restore-state">📤 Restore State (JSON)</button>
       <input type="file" id="restore-state-input" accept="application/json" hidden>
     </div>
-    
+
   </div><!-- /.menu-app -->
 
   <script type="module" src="js/main.js"></script>
@@ -83,6 +83,6 @@
     <footer class="site-footer">
     <p>A side project by ReversalRedGarnet (s11225524) · © July-2026</p>
   </footer>
-  
+
 </body>
 </html>

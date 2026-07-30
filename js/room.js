@@ -1,13 +1,42 @@
 /**
  * room.js — everything needed to render and drive a single room page.
  * Call initRoomPage(CFG) once CFG (metadata + layout + devices) is ready.
+ *
+ * Interface: one function. Everything a caller needs to know is that CFG
+ * carries { id, label, campus, back, canvasWidth, canvasHeight, layout,
+ * devices } and that #room-root exists. Statuses, notes, keyboard access,
+ * scaling and persistence all sit behind that.
  */
 import { loadState, saveState, stateKey } from './state.js';
 import { formatDate } from './format.js';
 import { exportRoom, exportAllRooms } from './export.js';
 
+/** Spoken/written status wording — one place, so the map, the pills and the
+ *  screen-reader labels can never disagree with each other. */
+const STATUS_WORDS = {
+  working: 'working',
+  minor:   'minor issue',
+  major:   'major issue',
+  unknown: 'not checked',
+};
+
+/** Statuses an intern can apply with one tap in quick-mark mode. */
+const QUICK_STATUSES = [
+  { status: 'working', label: 'Working' },
+  { status: 'minor',   label: 'Minor'   },
+  { status: 'major',   label: 'Major'   },
+  { status: 'clear',   label: 'Clear'   },
+];
+
 function escapeXML(s) {
   return String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+}
+
+/** For anything interpolated into HTML text or an attribute value. */
+function escapeHTML(s) {
+  return String(s).replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
 }
 
 /** Builds floor-plan SVG from layout data; falls back to a plain <img> if no `layout` is given. */
@@ -99,30 +128,52 @@ function drawLayout(layout, w = 1200, h = 800) {
     if (p.label) parts.push(`<title>${escapeXML(p.label)}</title>`);
   });
 
-  return `<svg class="room-bg-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">${parts.join('')}</svg>`;
+  return `<svg class="room-bg-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${parts.join('')}</svg>`;
 }
 
 function buildFloorPlanHTML(cfg) {
   if (cfg.layout) return drawLayout(cfg.layout, cfg.canvasWidth || 1200, cfg.canvasHeight || 800);
-  return `<img src="${cfg.bgImage}" class="room-bg" alt="${cfg.label} floor plan">`;
+  return `<img src="${escapeHTML(cfg.bgImage)}" class="room-bg" alt="${escapeHTML(cfg.label)} floor plan">`;
 }
 
+const deviceLabel = d => d.label || d.id;
+
+/**
+ * Devices are <button>s, not <div>s: they are then keyboard-reachable, get
+ * Enter/Space activation and focus rings for free, and screen readers
+ * announce them as controls rather than skipping them entirely.
+ */
 function buildDeviceHTML(devices) {
   return devices.map(d => {
+    const id  = escapeHTML(d.id);
+    const pos = `top:${Number(d.top) || 0}px;left:${Number(d.left) || 0}px`;
+
     if (d.type === 'printer') {
-      return `<div class="printer" data-id="${d.id}" style="top:${d.top}px;left:${d.left}px">
-                <span class="printer-icon">⎙</span> Printer
-              </div>`;
+      return `<button type="button" class="printer" data-id="${id}" data-kind="printer" style="${pos}">
+                <span class="printer-icon" aria-hidden="true">⎙</span> Printer
+              </button>`;
     }
-    const cls = d.type === 'staff' ? 'pc staff' : 'pc';
-    const label = d.label || d.id;
-    return `<div class="${cls}" data-id="${d.id}" style="top:${d.top}px;left:${d.left}px">${label}</div>`;
+
+    const label = deviceLabel(d);
+    const cls = ['pc'];
+    if (d.type === 'staff') cls.push('staff');
+    // Long IDs ("STAFF-PC") overflow the 42px chip — widen instead of clipping.
+    if (label.length > 5) cls.push('wide');
+
+    return `<button type="button" class="${cls.join(' ')}" data-id="${id}" data-kind="pc" style="${pos}">${escapeHTML(label)}</button>`;
   }).join('\n');
 }
 
 export function initRoomPage(CFG) {
   const roomId = CFG.id;
-  const state = loadState();
+  const W = CFG.canvasWidth || 1200;
+  const H = CFG.canvasHeight || 800;
+
+  /** Read cache. Every *write* re-reads first (see `mutate`) so a second tab
+   *  can't be rolled back by this page's stale snapshot. */
+  let state = loadState();
+
+  const deviceById = new Map(CFG.devices.map(d => [d.id, d]));
 
   document.title = `${CFG.label} — Room Monitor`;
   document.getElementById('room-root').innerHTML = `
@@ -131,47 +182,65 @@ export function initRoomPage(CFG) {
       <header>
         <div class="header-inner">
           <div class="header-title">
-            <a href="${CFG.back}" class="back-btn">← Menu</a>
+            <a href="${escapeHTML(CFG.back)}" class="back-btn">← Menu</a>
             <span class="header-icon">⬡</span>
             <div>
-              <h1>${CFG.label}</h1>
-              <p class="campus-crumb">${CFG.campus}</p>
+              <h1>${escapeHTML(CFG.label)}</h1>
+              <p class="campus-crumb">${escapeHTML(CFG.campus)}</p>
             </div>
           </div>
           <div class="status-summary">
-            <span class="summary-pill working" id="count-working">0 Working</span>
-            <span class="summary-pill minor"   id="count-minor">0 Minor</span>
-            <span class="summary-pill major"   id="count-major">0 Major</span>
+            <span class="summary-pill working"   id="count-working">0 Working</span>
+            <span class="summary-pill minor"     id="count-minor">0 Minor</span>
+            <span class="summary-pill major"     id="count-major">0 Major</span>
+            <span class="summary-pill unchecked" id="count-unchecked">0 unchecked</span>
           </div>
         </div>
-        <p class="subtitle">Click any device to update its status</p>
+        <div class="sweep">
+          <div class="sweep-bar"><span class="sweep-fill" id="sweep-fill" style="width:0%"></span></div>
+          <p class="subtitle" id="sweep-text">Tap a device to update it — or pick a status under Quick mark and tap straight through the room.</p>
+        </div>
       </header>
 
       <div class="toolbar">
+        <div class="quick-mark" id="quick-mark" role="group" aria-label="Quick mark">
+          <span class="quick-mark-label">Quick mark</span>
+          ${QUICK_STATUSES.map(q => `
+            <button type="button" class="quick-btn" data-status="${q.status}" aria-pressed="false">
+              ${q.status === 'clear' ? '' : `<span class="status-dot ${q.status}"></span>`}${q.label}
+            </button>`).join('')}
+        </div>
+        <button class="toolbar-btn" id="btn-undo" disabled>↶ Undo</button>
+        <button class="toolbar-btn" id="btn-zoom">⤢ Actual size</button>
         <button class="toolbar-btn" id="btn-export-room">⬇ Export This Room</button>
         <button class="toolbar-btn" id="btn-export-all">⬇ Export All Rooms</button>
         <button class="toolbar-btn" id="btn-reset">↺ Reset This Room</button>
       </div>
 
-      <div class="room" id="room" style="width:${CFG.canvasWidth || 1200}px;height:${CFG.canvasHeight || 800}px">
-        ${buildFloorPlanHTML(CFG)}
-        ${buildDeviceHTML(CFG.devices)}
+      <div class="room-viewport" id="room-viewport">
+        <div class="room" id="room" style="width:${W}px;height:${H}px">
+          ${buildFloorPlanHTML(CFG)}
+          ${buildDeviceHTML(CFG.devices)}
+        </div>
       </div>
+
+      <p class="visually-hidden" role="status" aria-live="polite" id="room-live"></p>
 
       <div class="legend">
         <div class="legend-item"><span class="dot working"></span>Working</div>
         <div class="legend-item"><span class="dot minor"></span>Minor Issue</div>
         <div class="legend-item"><span class="dot major"></span>Major Issue</div>
         <div class="legend-item"><span class="dot unknown"></span>Unknown</div>
+        <div class="legend-item"><span class="dot has-notes"></span>Has a note</div>
       </div>
 
     </div>
 
     <!-- PC popup -->
-    <div class="overlay" id="pc-overlay" role="dialog" aria-modal="true">
+    <div class="overlay" id="pc-overlay" role="dialog" aria-modal="true" aria-labelledby="pc-popup-title">
       <div class="popup">
-        <button class="popup-close" id="pc-close">✕</button>
-        <h3 class="popup-title">Update Status</h3>
+        <button class="popup-close" id="pc-close" aria-label="Close">✕</button>
+        <h3 class="popup-title" id="pc-popup-title">Update Status</h3>
         <p class="popup-id" id="popup-id"></p>
         <div class="status-grid">
           <button class="status-btn" data-status="working"><span class="status-dot working"></span>Working</button>
@@ -190,11 +259,11 @@ export function initRoomPage(CFG) {
     </div>
 
     <!-- Printer popup -->
-    <div class="overlay" id="printer-overlay" role="dialog" aria-modal="true">
+    <div class="overlay" id="printer-overlay" role="dialog" aria-modal="true" aria-labelledby="printer-popup-title">
       <div class="popup">
-        <button class="popup-close" id="printer-close">✕</button>
-        <h3 class="popup-title">Printer Status</h3>
-        <p class="popup-id">${roomId} › PRINTER</p>
+        <button class="popup-close" id="printer-close" aria-label="Close">✕</button>
+        <h3 class="popup-title" id="printer-popup-title">Printer Status</h3>
+        <p class="popup-id" id="printer-popup-id"></p>
         <div class="status-grid printer-grid">
           <button class="status-btn" data-status="working"><span class="status-dot working"></span>Working</button>
           <button class="status-btn" data-status="major"><span class="status-dot major"></span>Not Working</button>
@@ -210,9 +279,9 @@ export function initRoomPage(CFG) {
     </div>
 
     <!-- Reset confirmation -->
-    <div class="overlay" id="reset-overlay" role="dialog" aria-modal="true">
+    <div class="overlay" id="reset-overlay" role="dialog" aria-modal="true" aria-labelledby="reset-popup-title">
       <div class="popup popup-sm">
-        <h3 class="popup-title">Reset ${CFG.label}?</h3>
+        <h3 class="popup-title" id="reset-popup-title">Reset ${escapeHTML(CFG.label)}?</h3>
         <p class="popup-body">Clears all statuses and notes for this room only.</p>
         <div class="popup-actions">
           <button class="btn-danger"    id="reset-confirm">Yes, Reset</button>
@@ -223,95 +292,265 @@ export function initRoomPage(CFG) {
   `;
 
   /* DOM refs */
-  const pcs = document.querySelectorAll('.pc');
-  const printer = document.querySelector('.printer');
+  const room = document.getElementById('room');
+  const viewport = document.getElementById('room-viewport');
+  const liveEl = document.getElementById('room-live');
   const pcOverlay = document.getElementById('pc-overlay');
   const printerOverlay = document.getElementById('printer-overlay');
   const resetOverlay = document.getElementById('reset-overlay');
   const popupIdEl = document.getElementById('popup-id');
+  const printerIdEl = document.getElementById('printer-popup-id');
   const pcNotesEl = document.getElementById('pc-notes');
   const pcLastUpdated = document.getElementById('pc-last-updated');
   const printerNotesEl = document.getElementById('printer-notes');
   const printerLastUp = document.getElementById('printer-last-updated');
   const statusBtns = document.querySelectorAll('#pc-overlay .status-btn');
   const printerBtns = document.querySelectorAll('#printer-overlay .status-btn');
+  const quickBtns = document.querySelectorAll('#quick-mark .quick-btn');
+  const undoBtn = document.getElementById('btn-undo');
+  const zoomBtn = document.getElementById('btn-zoom');
 
-  let activePcId = null;
+  /** id → node, so repainting one device never re-scans the DOM. */
+  const nodeById = new Map(
+    [...room.querySelectorAll('[data-id]')].map(el => [el.dataset.id, el]),
+  );
+
+  let activeDeviceId = null;
   let selectedStatus = null;
+  let quickStatus = null;
+  let lastFocused = null;
+  const undoStack = [];
 
-  function applyStatus(el, entry) {
-    if (!el) return;
-    el.dataset.status = entry?.status || 'unknown';
+  const announce = msg => { liveEl.textContent = msg; };
+  const entryFor = id => state[stateKey(roomId, id)];
+
+  /* ── State writes ──────────────────────────────────────────────
+     Re-read before merging: an intern often has two room tabs open, and the
+     old code wrote back a snapshot taken at page load, silently reverting
+     whatever the other tab had saved in the meantime. */
+  function mutate(fn) {
+    const fresh = loadState();
+    fn(fresh);
+    saveState(fresh);
+    state = fresh;
   }
 
-  function applyAllStatuses() {
-    pcs.forEach(pc => applyStatus(pc, state[stateKey(roomId, pc.dataset.id)]));
-    if (printer) applyStatus(printer, state[stateKey(roomId, 'PRINTER')]);
+  /* ── Painting ──────────────────────────────────────────────── */
+
+  function paint(deviceId) {
+    const el = nodeById.get(deviceId);
+    if (!el) return;
+    const entry = entryFor(deviceId);
+    const device = deviceById.get(deviceId);
+    const status = entry?.status || 'unknown';
+    const name = device ? deviceLabel(device) : deviceId;
+    const kind = el.dataset.kind === 'printer' ? 'Printer ' : '';
+    const note = entry?.notes ? ` — note: ${entry.notes}` : '';
+
+    el.dataset.status = status;
+    el.dataset.hasNotes = entry?.notes ? 'true' : 'false';
+    el.setAttribute('aria-label', `${kind}${name}, ${STATUS_WORDS[status] || STATUS_WORDS.unknown}${note}`);
+    if (entry?.notes) el.setAttribute('title', entry.notes);
+    else el.removeAttribute('title');
+  }
+
+  function paintAll() {
+    CFG.devices.forEach(d => paint(d.id));
   }
 
   function updateSummary() {
-    let w = 0, m = 0, maj = 0;
+    let w = 0, m = 0, maj = 0, unchecked = 0;
     CFG.devices.forEach(({ id }) => {
-      const s = state[stateKey(roomId, id)]?.status;
+      const s = entryFor(id)?.status;
       if (s === 'working') w++;
       else if (s === 'minor') m++;
       else if (s === 'major') maj++;
+      else unchecked++;
     });
+    const total = CFG.devices.length;
+    const checked = total - unchecked;
     document.getElementById('count-working').textContent = `${w} Working`;
     document.getElementById('count-minor').textContent = `${m} Minor`;
     document.getElementById('count-major').textContent = `${maj} Major`;
+    document.getElementById('count-unchecked').textContent = `${unchecked} unchecked`;
+    document.getElementById('sweep-fill').style.width = total ? `${(checked / total) * 100}%` : '0%';
+    document.getElementById('sweep-text').textContent =
+      `${checked} of ${total} devices checked${unchecked ? ` — ${unchecked} to go` : ' — room complete'}`;
   }
+
+  /* ── Entry writes ──────────────────────────────────────────── */
 
   function saveEntry(deviceId, status, notes) {
     const key = stateKey(roomId, deviceId);
-    state[key] = { status, notes, updatedAt: new Date().toISOString() };
-    saveState(state);
-    const el = deviceId === 'PRINTER' ? printer : [...pcs].find(p => p.dataset.id === deviceId);
-    applyStatus(el, state[key]);
+    mutate(s => { s[key] = { status, notes, updatedAt: new Date().toISOString() }; });
+    paint(deviceId);
+    updateSummary();
+  }
+
+  function clearEntry(deviceId) {
+    mutate(s => { delete s[stateKey(roomId, deviceId)]; });
+    paint(deviceId);
     updateSummary();
   }
 
   function resetRoom() {
-    CFG.devices.forEach(({ id }) => delete state[stateKey(roomId, id)]);
-    saveState(state);
-    applyAllStatuses();
+    mutate(s => { CFG.devices.forEach(({ id }) => delete s[stateKey(roomId, id)]); });
+    undoStack.length = 0;
+    refreshUndo();
+    paintAll();
     updateSummary();
+    announce(`${CFG.label} reset`);
   }
 
+  /* ── Quick mark ────────────────────────────────────────────────
+     A room is 24–37 machines. Popup-per-device is 4 taps each; quick mark
+     makes a sweep one tap per device, with Undo as the safety net. */
+
+  function refreshUndo() {
+    undoBtn.disabled = undoStack.length === 0;
+    undoBtn.textContent = undoStack.length ? `↶ Undo (${undoStack.length})` : '↶ Undo';
+  }
+
+  function setQuick(status) {
+    quickStatus = status;
+    quickBtns.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.status === status)));
+    room.classList.toggle('quick-mode', !!status);
+    if (status) room.dataset.quick = status; else delete room.dataset.quick;
+    announce(status
+      ? `Quick mark ${status === 'clear' ? 'clear' : STATUS_WORDS[status]} on — tap devices to apply`
+      : 'Quick mark off');
+  }
+
+  function quickApply(deviceId) {
+    undoStack.push({ deviceId, previous: entryFor(deviceId) ?? null });
+    refreshUndo();
+    if (quickStatus === 'clear') {
+      clearEntry(deviceId);
+      announce(`${deviceId} cleared`);
+    } else {
+      const keep = entryFor(deviceId)?.notes || '';
+      saveEntry(deviceId, quickStatus, keep);
+      announce(`${deviceId} marked ${STATUS_WORDS[quickStatus]}`);
+    }
+  }
+
+  function undoLast() {
+    const last = undoStack.pop();
+    refreshUndo();
+    if (!last) return;
+    if (last.previous) {
+      mutate(s => { s[stateKey(roomId, last.deviceId)] = last.previous; });
+      paint(last.deviceId);
+      updateSummary();
+    } else {
+      clearEntry(last.deviceId);
+    }
+    announce(`Undid ${last.deviceId}`);
+  }
+
+  /* ── Overlays + focus ──────────────────────────────────────────
+     Focus is moved into the dialog on open and returned to the device that
+     opened it on close, so a keyboard sweep doesn't lose its place. */
+
+  function focusables(overlay) {
+    return [...overlay.querySelectorAll('button, textarea, [href], input, select')]
+      .filter(el => !el.disabled);
+  }
+
+  function openOverlay(overlay, focusEl) {
+    lastFocused = document.activeElement;
+    overlay.classList.add('open');
+    (focusEl || focusables(overlay)[0])?.focus?.();
+  }
+
+  function closeOverlay(overlay) {
+    if (!overlay.classList.contains('open')) return;
+    overlay.classList.remove('open');
+    if (lastFocused?.isConnected) lastFocused.focus?.();
+    lastFocused = null;
+  }
+
+  function trapTab(e, overlay) {
+    if (e.key !== 'Tab') return;
+    const items = focusables(overlay);
+    if (!items.length) return;
+    const first = items[0], last = items[items.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
+
+  [pcOverlay, printerOverlay, resetOverlay].forEach(o =>
+    o.addEventListener('keydown', e => trapTab(e, o)));
+
   function openPcPopup(deviceId) {
-    activePcId = deviceId;
-    const entry = state[stateKey(roomId, deviceId)];
+    activeDeviceId = deviceId;
+    const entry = entryFor(deviceId);
     selectedStatus = entry?.status || 'unknown';
     popupIdEl.textContent = `${roomId} › ${deviceId}`;
     pcNotesEl.value = entry?.notes || '';
     pcLastUpdated.textContent = entry?.updatedAt ? `Updated ${formatDate(entry.updatedAt)}` : '';
     statusBtns.forEach(b => b.classList.toggle('selected', b.dataset.status === selectedStatus));
-    pcOverlay.classList.add('open');
+    openOverlay(pcOverlay, [...statusBtns].find(b => b.dataset.status === selectedStatus));
   }
 
   function closePcPopup() {
-    pcOverlay.classList.remove('open');
-    activePcId = selectedStatus = null;
+    closeOverlay(pcOverlay);
+    activeDeviceId = selectedStatus = null;
   }
 
-  function openPrinterPopup() {
-    activePcId = 'PRINTER';
-    const entry = state[stateKey(roomId, 'PRINTER')];
+  function openPrinterPopup(deviceId) {
+    activeDeviceId = deviceId;
+    const entry = entryFor(deviceId);
     selectedStatus = entry?.status || 'unknown';
+    printerIdEl.textContent = `${roomId} › ${deviceId}`;
     printerNotesEl.value = entry?.notes || '';
     printerLastUp.textContent = entry?.updatedAt ? `Updated ${formatDate(entry.updatedAt)}` : '';
     printerBtns.forEach(b => b.classList.toggle('selected', b.dataset.status === selectedStatus));
-    printerOverlay.classList.add('open');
+    openOverlay(printerOverlay, [...printerBtns].find(b => b.dataset.status === selectedStatus));
   }
 
   function closePrinterPopup() {
-    printerOverlay.classList.remove('open');
-    activePcId = selectedStatus = null;
+    closeOverlay(printerOverlay);
+    activeDeviceId = selectedStatus = null;
   }
 
-  /* Events */
-  pcs.forEach(pc => pc.addEventListener('click', () => openPcPopup(pc.dataset.id)));
-  if (printer) printer.addEventListener('click', openPrinterPopup);
+  /* ── Fit-to-screen ─────────────────────────────────────────────
+     The floor plan is a fixed 1200×800-ish coordinate space. Rather than
+     rewriting every device position as a percentage, scale the whole canvas
+     and let the viewport own the height — so the room fits a phone screen
+     without horizontal scrolling, and "Actual size" still gives 1:1. */
+  let fitMode = true;
+
+  function applyScale() {
+    const available = viewport.clientWidth || W;
+    const k = fitMode ? Math.min(1, available / W) : 1;
+    room.style.transformOrigin = 'top left';
+    room.style.transform = `scale(${k})`;
+    viewport.style.height = `${Math.round(H * k)}px`;
+    viewport.classList.toggle('actual-size', !fitMode);
+    zoomBtn.textContent = fitMode ? '⤢ Actual size' : '⤢ Fit to screen';
+    zoomBtn.setAttribute('aria-pressed', String(!fitMode));
+  }
+
+  /* ── Events ────────────────────────────────────────────────── */
+
+  // One delegated listener instead of one per device.
+  room.addEventListener('click', e => {
+    const el = e.target.closest?.('[data-id]');
+    if (!el || !room.contains(el)) return;
+    const deviceId = el.dataset.id;
+    if (quickStatus) { quickApply(deviceId); return; }
+    if (el.dataset.kind === 'printer') openPrinterPopup(deviceId);
+    else openPcPopup(deviceId);
+  });
+
+  quickBtns.forEach(btn => btn.addEventListener('click', () => {
+    setQuick(quickStatus === btn.dataset.status ? null : btn.dataset.status);
+  }));
+
+  undoBtn.addEventListener('click', undoLast);
+
+  zoomBtn.addEventListener('click', () => { fitMode = !fitMode; applyScale(); });
 
   statusBtns.forEach(btn => btn.addEventListener('click', () => {
     selectedStatus = btn.dataset.status;
@@ -324,7 +563,10 @@ export function initRoomPage(CFG) {
   }));
 
   document.getElementById('pc-save').addEventListener('click', () => {
-    if (activePcId && selectedStatus) saveEntry(activePcId, selectedStatus, pcNotesEl.value.trim());
+    if (activeDeviceId && selectedStatus) {
+      saveEntry(activeDeviceId, selectedStatus, pcNotesEl.value.trim());
+      announce(`${activeDeviceId} saved as ${STATUS_WORDS[selectedStatus]}`);
+    }
     closePcPopup();
   });
   document.getElementById('pc-close').addEventListener('click', closePcPopup);
@@ -332,27 +574,45 @@ export function initRoomPage(CFG) {
   pcOverlay.addEventListener('click', e => { if (e.target === pcOverlay) closePcPopup(); });
 
   document.getElementById('printer-save').addEventListener('click', () => {
-    if (selectedStatus) saveEntry('PRINTER', selectedStatus, printerNotesEl.value.trim());
+    if (activeDeviceId && selectedStatus) {
+      saveEntry(activeDeviceId, selectedStatus, printerNotesEl.value.trim());
+      announce(`${activeDeviceId} saved as ${STATUS_WORDS[selectedStatus]}`);
+    }
     closePrinterPopup();
   });
   document.getElementById('printer-close').addEventListener('click', closePrinterPopup);
   document.getElementById('printer-cancel').addEventListener('click', closePrinterPopup);
   printerOverlay.addEventListener('click', e => { if (e.target === printerOverlay) closePrinterPopup(); });
 
-  document.getElementById('btn-reset').addEventListener('click', () => resetOverlay.classList.add('open'));
-  document.getElementById('reset-confirm').addEventListener('click', () => { resetRoom(); resetOverlay.classList.remove('open'); });
-  document.getElementById('reset-cancel').addEventListener('click', () => resetOverlay.classList.remove('open'));
-  resetOverlay.addEventListener('click', e => { if (e.target === resetOverlay) resetOverlay.classList.remove('open'); });
+  document.getElementById('btn-reset').addEventListener('click', () => openOverlay(resetOverlay));
+  document.getElementById('reset-confirm').addEventListener('click', () => { resetRoom(); closeOverlay(resetOverlay); });
+  document.getElementById('reset-cancel').addEventListener('click', () => closeOverlay(resetOverlay));
+  resetOverlay.addEventListener('click', e => { if (e.target === resetOverlay) closeOverlay(resetOverlay); });
 
   document.getElementById('btn-export-room').addEventListener('click', () => exportRoom(roomId, CFG.label));
   document.getElementById('btn-export-all').addEventListener('click', () => exportAllRooms());
 
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
-    closePcPopup(); closePrinterPopup();
-    resetOverlay.classList.remove('open');
+    const anyOpen = [pcOverlay, printerOverlay, resetOverlay].some(o => o.classList.contains('open'));
+    if (anyOpen) { closePcPopup(); closePrinterPopup(); closeOverlay(resetOverlay); }
+    else if (quickStatus) setQuick(null);
   });
 
-  applyAllStatuses();
+  // Another tab saved something — pick it up instead of showing stale colours.
+  window.addEventListener('storage', () => {
+    state = loadState();
+    paintAll();
+    updateSummary();
+  });
+
+  window.addEventListener('resize', applyScale);
+  if (typeof ResizeObserver === 'function') {
+    new ResizeObserver(applyScale).observe(viewport);
+  }
+
+  paintAll();
   updateSummary();
+  refreshUndo();
+  applyScale();
 }

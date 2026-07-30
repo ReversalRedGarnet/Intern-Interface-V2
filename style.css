@@ -863,3 +863,207 @@ body.menu-page {
   padding-top: 20px;
   border-top: 1px solid var(--border-light);
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   INTERN SWEEP UI — added July 2026
+   Everything below supports the room page's device sweep: keyboard
+   focus, quick-mark, progress, note flags, and fitting a 1200px floor
+   plan onto a phone. Appended (rather than edited in above) so the
+   diff against the original stylesheet stays readable.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Screen-reader-only live region ── */
+.visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Devices are <button>s now — clear the UA button styling ── */
+.pc, .printer {
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 0;
+  line-height: 1.15;
+  text-align: center;
+}
+
+/* Visible focus ring for keyboard users, suppressed for mouse clicks. */
+.pc:focus-visible,
+.printer:focus-visible,
+.toolbar-btn:focus-visible,
+.quick-btn:focus-visible,
+.status-btn:focus-visible,
+.campus-toggle:focus-visible,
+.room-link:focus-visible,
+.back-btn:focus-visible,
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible,
+.btn-danger:focus-visible,
+.popup-close:focus-visible {
+  outline: 3px solid var(--usp-orange);
+  outline-offset: 2px;
+  z-index: 20;
+}
+
+/* Long labels ("STAFF-PC") in a wider chip instead of overflowing. */
+.pc.wide {
+  width: 64px;
+  font-size: 8px;
+  letter-spacing: -0.02em;
+}
+
+/* ── "This device has a note" flag ──
+   A note used to be invisible on the map — same colour as any other
+   device — so whoever read the room had to open each popup to find it. */
+.pc[data-has-notes="true"]::before,
+.printer[data-has-notes="true"]::before {
+  content: '';
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--usp-orange);
+  border: 1.5px solid #fff;
+  box-shadow: 0 1px 2px rgba(0,48,56,.25);
+  z-index: 2;
+}
+
+.dot.has-notes { background: var(--usp-orange); }
+
+/* ── Unchecked pill + sweep progress bar ── */
+.summary-pill.unchecked {
+  background: var(--unknown-bg);
+  color: var(--unknown-dark);
+  border-color: var(--unknown);
+}
+
+.sweep { margin-top: 8px; }
+
+.sweep-bar {
+  height: 5px;
+  border-radius: 999px;
+  background: var(--border-light);
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.sweep-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--usp-blue);
+  transition: width .25s ease;
+}
+
+/* ── Quick-mark group ──
+   Arm a status once, then one tap per device instead of four. */
+.quick-mark {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 4px 10px 4px 12px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.quick-mark-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-right: 2px;
+}
+
+.quick-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--surface-2);
+  color: var(--text-mid);
+  border: 1.5px solid var(--border-light);
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.quick-btn:hover { border-color: var(--usp-blue); color: var(--text); }
+
+.quick-btn[aria-pressed="true"][data-status="working"] { background: var(--working-bg); border-color: var(--working); color: var(--working-dark); font-weight: 600; }
+.quick-btn[aria-pressed="true"][data-status="minor"]   { background: var(--minor-bg);   border-color: var(--minor);   color: var(--minor-dark);   font-weight: 600; }
+.quick-btn[aria-pressed="true"][data-status="major"]   { background: var(--major-bg);   border-color: var(--major);   color: var(--major-dark);   font-weight: 600; }
+.quick-btn[aria-pressed="true"][data-status="clear"]   { background: var(--unknown-bg); border-color: var(--unknown); color: var(--unknown-dark); font-weight: 600; }
+
+.toolbar-btn:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.toolbar-btn:disabled:hover {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text-mid);
+}
+
+/* While armed, the whole floor plan is a marking surface — say so. */
+.room.quick-mode { cursor: crosshair; }
+.room.quick-mode .pc,
+.room.quick-mode .printer { cursor: crosshair; }
+.room.quick-mode {
+  outline: 2px dashed var(--usp-orange);
+  outline-offset: 3px;
+}
+
+/* ── Fit-to-screen viewport ──
+   The floor plan keeps its fixed coordinate space (every device position in
+   data/*.json stays valid); the canvas is scaled as a whole and the
+   viewport owns the resulting height. */
+.room-viewport {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+}
+
+.room-viewport.actual-size {
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.room-viewport .room {
+  transform-origin: top left;
+}
+
+/* ── Small screens ── */
+@media (max-width: 700px) {
+  .app { padding: 16px 12px 32px; }
+
+  .header-inner { align-items: flex-start; }
+
+  .status-summary { gap: 6px; }
+  .summary-pill { font-size: 10px; padding: 3px 9px; }
+
+  .toolbar { gap: 6px; }
+  .toolbar-btn { flex: 1 1 auto; min-height: 40px; }
+
+  .quick-mark { flex: 1 1 100%; justify-content: flex-start; }
+  .quick-btn { flex: 1 1 auto; justify-content: center; min-height: 40px; }
+
+  .legend { gap: 12px 16px; margin-top: 12px; }
+
+  .popup { padding: 22px 18px 18px; }
+  .status-btn { min-height: 44px; }
+}
